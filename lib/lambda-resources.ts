@@ -1,5 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
@@ -11,17 +13,67 @@ export class LambdaResources extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
+    const defaultVpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', {
+      isDefault: true,
+    });
+
+    const dbSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
+      this,
+      'DbSG',
+      'sg-06a640a138ab7beb7',
+    );
+
+    const dbHost = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/config/prod/db-host',
+    );
+
+    const dbPort = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/config/prod/db-port',
+    );
+
+    const dbUser = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/config/prod/db-user',
+    );
+
+    const dbPassword = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/config/prod/db-password',
+    );
+
     this.bbfFunction = new NodejsFunction(this, 'BackendForFrontend', {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_24_X,
       environment: {
         NODE_OPTIONS: '--enable-source-maps',
+        DB_HOST: dbHost,
+        DB_PORT: dbPort,
+        DB_USER: dbUser,
+        DB_PASSWORD: dbPassword,
+        DBCluster_DB: 'cart_db',
       },
+      vpc: defaultVpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      allowPublicSubnet: true,
+      securityGroups: [dbSecurityGroup],
       bundling: {
         tsconfig: path.resolve(__dirname, '../tsconfig.json'),
         minify: true,
         sourceMap: true,
         bundleAwsSDK: true,
+        commandHooks: {
+          beforeBundling(inputDir: string, outputDir: string): string[] {
+            return [`cp -r ${inputDir}/src/database ${outputDir}/`];
+          },
+          afterBundling(): string[] {
+            return [];
+          },
+          beforeInstall(): string[] {
+            return [];
+          },
+        },
         externalModules: [
           '@nestjs/microservices',
           '@nestjs/microservices/microservices-module',
