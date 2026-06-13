@@ -4,7 +4,7 @@ import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations
 import { Construct } from 'constructs';
 
 interface ApiGatewayResourcesProps {
-  bffFunction: lambda.IFunction;
+  cardServiceFunction: lambda.IFunction;
 }
 
 export class ApiGatewayResources extends Construct {
@@ -38,7 +38,7 @@ export class ApiGatewayResources extends Construct {
       methods: [apigw.HttpMethod.ANY],
       integration: new HttpLambdaIntegration(
         'BffIntegration',
-        props.bffFunction,
+        props.cardServiceFunction,
       ),
     });
   }

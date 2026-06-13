@@ -4,11 +4,12 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
 export class LambdaResources extends Construct {
-  public readonly bbfFunction: NodejsFunction;
+  public readonly cardServiceFunction: NodejsFunction;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -43,7 +44,12 @@ export class LambdaResources extends Construct {
       '/config/prod/db-password',
     );
 
-    this.bbfFunction = new NodejsFunction(this, 'BackendForFrontend', {
+    const productTableName = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/config/prod/dynamoDbTable/products',
+    );
+
+    this.cardServiceFunction = new NodejsFunction(this, 'CardServiceFunction', {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_24_X,
       environment: {
@@ -52,7 +58,8 @@ export class LambdaResources extends Construct {
         DB_PORT: dbPort,
         DB_USER: dbUser,
         DB_PASSWORD: dbPassword,
-        DBCluster_DB: 'cart_db',
+        DB_NAME: 'cart_db',
+        PRODUCT_TABLE: productTableName,
       },
       vpc: defaultVpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
@@ -91,5 +98,14 @@ export class LambdaResources extends Construct {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
+
+    this.cardServiceFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:BatchGetItem', 'dynamodb:GetItem'],
+        resources: [
+          `arn:aws:dynamodb:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:table/${productTableName}`,
+        ],
+      }),
+    );
   }
 }

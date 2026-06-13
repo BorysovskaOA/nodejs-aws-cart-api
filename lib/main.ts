@@ -10,7 +10,7 @@ export class CartServiceStack extends cdk.Stack {
     const lambdaLayer = new LambdaResources(this, 'LambdaLayer');
 
     const apiGatewayLayer = new ApiGatewayResources(this, 'ApiGatewayLayer', {
-      bffFunction: lambdaLayer.bbfFunction,
+      cardServiceFunction: lambdaLayer.cardServiceFunction,
     });
 
     new cdk.CfnOutput(this, 'HttpApiUrl', {

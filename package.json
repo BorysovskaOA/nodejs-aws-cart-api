@@ -31,6 +31,8 @@
     "migration:revert": "npm run typeorm -- migration:revert"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1068.0",
+    "@aws-sdk/lib-dynamodb": "^3.1068.0",
     "@codegenie/serverless-express": "^5.0.0",
     "@nestjs/common": "^10.0.3",
     "@nestjs/config": "^3.0.0",

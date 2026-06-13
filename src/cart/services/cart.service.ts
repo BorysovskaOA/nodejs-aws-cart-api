@@ -1,62 +1,163 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { Cart, CartStatuses } from '../models';
+import { DataSource, EntityManager } from 'typeorm';
+import { CartStatuses, Product } from '../models';
+import { CartItem } from '../entities/cart-item.entity';
+import { CartItem as FECardItem } from '../models';
+
+import { Cart } from '../entities/cart.entity';
 import { PutCartPayload } from 'src/order/type';
+import { BatchGetCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class CartService {
-  private userCarts: Record<string, Cart> = {};
+  private readonly dynamoDocClient: DynamoDBDocumentClient;
+  private readonly productsTable: string;
 
-  findByUserId(userId: string): Cart {
-    return this.userCarts[userId];
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+  ) {
+    const client = new DynamoDBClient();
+    this.productsTable = this.configService.get<string>('PRODUCTS_TABLE');
+    this.dynamoDocClient = DynamoDBDocumentClient.from(client);
   }
 
-  createByUserId(user_id: string): Cart {
-    const timestamp = Date.now();
+  async mapToCartItems(entities: CartItem[]): Promise<FECardItem[]> {
+    if (!entities.length) return [];
 
-    const userCart = {
-      id: randomUUID(),
-      user_id,
-      created_at: timestamp,
-      updated_at: timestamp,
+    const uniqueProductIds = Array.from(
+      new Set(entities.map((e) => e.product_id)),
+    );
+
+    const keys = uniqueProductIds.map((id) => ({ id }));
+
+    const command = new BatchGetCommand({
+      RequestItems: {
+        [this.productsTable]: {
+          Keys: keys,
+        },
+      },
+    });
+
+    const response = await this.dynamoDocClient.send(command);
+    const dynamoProducts = (response.Responses?.[this.productsTable] ||
+      []) as Product[];
+
+    const productMap = new Map<string, Product>();
+    dynamoProducts.forEach((p) => productMap.set(p.id, p));
+
+    return entities.map((entity) => {
+      const fetchedProduct = productMap.get(entity.product_id);
+
+      return {
+        product: fetchedProduct || {
+          id: entity.product_id,
+          title: 'Unknown Product',
+          description: 'Product details missing from DynamoDB',
+          price: 0,
+        },
+        count: entity.count,
+      };
+    });
+  }
+
+  async findByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Cart | null> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    return await repo.findOne({
+      where: {
+        user: { id: userId },
+        status: CartStatuses.OPEN,
+      },
+      relations: ['items'],
+    });
+  }
+
+  async createByUserId(userId: string, manager?: EntityManager): Promise<Cart> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    const userCart = repo.create({
+      user: { id: userId },
       status: CartStatuses.OPEN,
       items: [],
-    };
-
-    this.userCarts[user_id] = userCart;
-
-    return userCart;
+    });
+    return await repo.save(userCart);
   }
 
-  findOrCreateByUserId(userId: string): Cart {
-    const userCart = this.findByUserId(userId);
-
+  async findOrCreateByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Cart> {
+    const userCart = await this.findByUserId(userId, manager);
     if (userCart) {
       return userCart;
     }
-
-    return this.createByUserId(userId);
+    return await this.createByUserId(userId, manager);
   }
 
-  updateByUserId(userId: string, payload: PutCartPayload): Cart {
-    const userCart = this.findOrCreateByUserId(userId);
+  async updateByUserId(userId: string, payload: PutCartPayload): Promise<Cart> {
+    return await this.dataSource.transaction(async (manager) => {
+      let cart = await manager.findOne(Cart, {
+        where: { user: { id: userId }, status: CartStatuses.OPEN },
+        relations: ['items'],
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const index = userCart.items.findIndex(
-      ({ product }) => product.id === payload.product.id,
-    );
+      if (!cart) {
+        const newCart = manager.create(Cart, {
+          user: { id: userId },
+          status: CartStatuses.OPEN,
+          items: [],
+        });
+        cart = await manager.save(Cart, newCart);
+      }
 
-    if (index === -1) {
-      userCart.items.push(payload);
-    } else if (payload.count === 0) {
-      userCart.items.splice(index, 1);
-    } else {
-      userCart.items[index] = payload;
+      const productId = payload.product.id;
+      const existingItem = cart.items.find(
+        (item) => item.cart_id === cart.id && item.product_id === productId,
+      );
+
+      if (!existingItem) {
+        if (payload.count > 0) {
+          const newItem = manager.create(CartItem, {
+            cart_id: cart.id,
+            product_id: productId,
+            count: payload.count,
+          });
+          await manager.save(CartItem, newItem);
+        }
+      } else if (payload.count === 0) {
+        await manager.remove(CartItem, existingItem);
+      } else {
+        existingItem.count = payload.count;
+        await manager.save(CartItem, existingItem);
+      }
+
+      const updatedCart = await manager.findOne(Cart, {
+        where: { id: cart.id },
+        relations: ['items'],
+      });
+
+      if (!updatedCart) throw new Error('Failed to load finalized cart status');
+      return updatedCart;
+    });
+  }
+
+  async removeByUserId(userId: string, manager?: EntityManager): Promise<void> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    const cart = await this.findByUserId(userId, manager);
+    if (cart) {
+      cart.status = CartStatuses.ORDERED;
+      await repo.save(cart);
     }
-
-    return userCart;
-  }
-
-  removeByUserId(userId): void {
-    this.userCarts[userId] = null;
   }
 }

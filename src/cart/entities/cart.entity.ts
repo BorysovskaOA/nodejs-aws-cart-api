@@ -5,17 +5,21 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { CartItem } from './cart-item.entity';
 import { CartStatuses } from '../models';
+import { User } from 'src/users/entities/user.entity';
 
 @Entity('carts')
 export class Cart {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', nullable: false })
-  user_id: string;
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   created_at: Date;

@@ -9,6 +9,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CartItem } from './cart/entities/cart-item.entity';
 import { Cart } from './cart/entities/cart.entity';
+import { User } from './users/entities/user.entity';
+import { Order } from './order/entities/order.entity';
 
 @Module({
   imports: [
@@ -24,8 +26,8 @@ import { Cart } from './cart/entities/cart.entity';
         port: configService.get<number>('DB_PORT', 5432),
         username: configService.get<string>('DB_USER'),
         password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_DB'),
-        entities: [Cart, CartItem],
+        database: configService.get<string>('DB_NAME'),
+        entities: [User, Cart, CartItem, Order],
         migrations: [__dirname + '/database/migrations/**/*{.ts,.js}'],
         migrationsRun: true,
         synchronize: false,
