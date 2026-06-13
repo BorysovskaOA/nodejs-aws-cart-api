@@ -16,14 +16,6 @@ export class ApiGatewayResources extends Construct {
     this.httpApi = new apigw.HttpApi(this, 'BffApi', {
       apiName: 'Bff Service',
       createDefaultStage: false,
-      corsPreflight: {
-        allowMethods: [apigw.CorsHttpMethod.ANY],
-        allowHeaders: ['*'],
-        allowOrigins: [
-          'http://localhost:3000',
-          'https://d180fy39z34bng.cloudfront.net',
-        ],
-      },
     });
 
     new apigw.HttpStage(this, 'DefaultStage', {

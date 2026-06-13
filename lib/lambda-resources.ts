@@ -18,6 +18,12 @@ export class LambdaResources extends Construct {
       isDefault: true,
     });
 
+    new ec2.GatewayVpcEndpoint(this, 'DynamoDBEndpoint', {
+      vpc: defaultVpc,
+      service: new ec2.GatewayVpcEndpointAwsService('dynamodb'),
+      subnets: [{ subnetType: ec2.SubnetType.PUBLIC }],
+    });
+
     const dbSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
       this,
       'DbSG',
