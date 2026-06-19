@@ -20,23 +20,34 @@ import { Order } from './order/entities/order.entity';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT', 5432),
-        username: configService.get<string>('DB_USER'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
-        entities: [User, Cart, CartItem, Order],
-        migrations: [__dirname + '/database/migrations/**/*{.ts,.js}'],
-        migrationsRun: true,
-        synchronize: false,
-      }),
+      useFactory: (configService: ConfigService) => {
+        console.log(
+          configService.get<string>('DB_HOST'),
+          configService.get<number>('DB_PORT', 5432),
+          configService.get<string>('DB_USER'),
+          configService.get<string>('DB_PASSWORD'),
+          configService.get<string>('DB_NAME'),
+        );
+        return {
+          type: 'postgres',
+          host: configService.get<string>('DB_HOST'),
+          port: configService.get<number>('DB_PORT', 5432),
+          username: configService.get<string>('DB_USER'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_NAME'),
+          entities: [User, Cart, CartItem, Order],
+          synchronize: false,
+          migrationsRun: false,
+          extra: {
+            max: 2,
+            idleTimeoutMillis: 30000,
+          },
+        };
+      },
     }),
     AuthModule,
     CartModule,
     OrderModule,
-    ConfigModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [],

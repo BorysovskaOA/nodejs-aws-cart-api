@@ -8,6 +8,7 @@
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",
+    "build:lambda": "npm run build && cp package.json package-lock.json dist/ && cd dist && npm ci --omit=dev --omit=optional",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -22,7 +23,7 @@
     "cdk": "cdk",
     "bootstrap": "npx cdk bootstrap",
     "synth": "cdk synth",
-    "deploy": "cdk deploy",
+    "deploy": "npm run build:lambda && cdk deploy",
     "destroy": "cdk destroy",
     "diff": "cdk diff",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d typeorm.config.ts",
@@ -32,8 +33,6 @@
     "seed": "ts-node -r tsconfig-paths/register src/database/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1068.0",
-    "@aws-sdk/lib-dynamodb": "^3.1068.0",
     "@codegenie/serverless-express": "^5.0.0",
     "@nestjs/common": "^10.0.3",
     "@nestjs/config": "^3.0.0",
@@ -82,6 +81,7 @@
     "ts-loader": "^9.4.3",
     "ts-node": "^10.9.1",
     "tsconfig-paths": "^4.2.0",
+    "typeorm-extension": "^3.9.0",
     "typescript": "^5.1.3"
   },
   "jest": {

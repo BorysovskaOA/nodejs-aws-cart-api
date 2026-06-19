@@ -1,63 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { CartStatuses, Product } from '../models';
+import { CartStatuses } from '../models';
 import { CartItem } from '../entities/cart-item.entity';
 import { CartItem as FECardItem } from '../models';
 
 import { Cart } from '../entities/cart.entity';
 import { PutCartPayload } from 'src/order/type';
-import { BatchGetCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class CartService {
-  private readonly dynamoDocClient: DynamoDBDocumentClient;
-  private readonly productsTable: string;
-
-  constructor(
-    private readonly dataSource: DataSource,
-    private readonly configService: ConfigService,
-  ) {
-    const client = new DynamoDBClient();
-    this.productsTable = this.configService.get<string>('PRODUCTS_TABLE');
-    this.dynamoDocClient = DynamoDBDocumentClient.from(client);
-  }
+  constructor(private readonly dataSource: DataSource) {}
 
   async mapToCartItems(entities: CartItem[]): Promise<FECardItem[]> {
     if (!entities.length) return [];
 
-    const uniqueProductIds = Array.from(
-      new Set(entities.map((e) => e.product_id)),
-    );
-
-    const keys = uniqueProductIds.map((id) => ({ id }));
-
-    const command = new BatchGetCommand({
-      RequestItems: {
-        [this.productsTable]: {
-          Keys: keys,
-        },
-      },
-    });
-
-    const response = await this.dynamoDocClient.send(command);
-    const dynamoProducts = (response.Responses?.[this.productsTable] ||
-      []) as Product[];
-
-    const productMap = new Map<string, Product>();
-    dynamoProducts.forEach((p) => productMap.set(p.id, p));
-
     return entities.map((entity) => {
-      const fetchedProduct = productMap.get(entity.product_id);
-
       return {
-        product: fetchedProduct || {
-          id: entity.product_id,
-          title: 'Unknown Product',
-          description: 'Product details missing from DynamoDB',
-          price: 0,
-        },
+        product: entity.product,
         count: entity.count,
       };
     });
@@ -106,7 +65,6 @@ export class CartService {
     return await this.dataSource.transaction(async (manager) => {
       let cart = await manager.findOne(Cart, {
         where: { user: { id: userId }, status: CartStatuses.OPEN },
-        relations: ['items'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -117,6 +75,10 @@ export class CartService {
           items: [],
         });
         cart = await manager.save(Cart, newCart);
+      } else {
+        cart.items = await manager.find(CartItem, {
+          where: { cart_id: cart.id },
+        });
       }
 
       const productId = payload.product.id;
@@ -129,6 +91,7 @@ export class CartService {
           const newItem = manager.create(CartItem, {
             cart_id: cart.id,
             product_id: productId,
+            product: payload.product,
             count: payload.count,
           });
           await manager.save(CartItem, newItem);

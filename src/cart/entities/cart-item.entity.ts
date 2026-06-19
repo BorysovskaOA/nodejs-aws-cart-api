@@ -1,5 +1,6 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { Cart } from './cart.entity';
+import { Product } from '../models';
 
 @Entity('cart_items')
 export class CartItem {
@@ -8,6 +9,9 @@ export class CartItem {
 
   @PrimaryColumn({ type: 'uuid' })
   product_id: string;
+
+  @Column({ type: 'json', nullable: false, default: {} })
+  product: Product;
 
   @Column({ type: 'integer', nullable: false })
   count: number;

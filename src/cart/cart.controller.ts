@@ -22,7 +22,7 @@ import { CartItem } from './models';
 import { CreateOrderDto, PutCartPayload } from 'src/order/type';
 import { User } from 'src/users/entities/user.entity';
 
-@Controller('api/profile/cart')
+@Controller()
 export class CartController {
   constructor(
     private cartService: CartService,
@@ -32,7 +32,7 @@ export class CartController {
   ) {}
 
   @UseGuards(BasicAuthGuard)
-  @Get()
+  @Get('api/profile/cart')
   async findUserCart(@Req() req: AppRequest): Promise<CartItem[]> {
     const cart = await this.cartService.findOrCreateByUserId(
       getUserIdFromRequest(req),
@@ -42,7 +42,7 @@ export class CartController {
   }
 
   @UseGuards(BasicAuthGuard)
-  @Put()
+  @Put('api/profile/cart')
   async updateUserCart(
     @Req() req: AppRequest,
     @Body() body: PutCartPayload,
@@ -56,14 +56,14 @@ export class CartController {
   }
 
   @UseGuards(BasicAuthGuard)
-  @Delete()
+  @Delete('api/profile/cart')
   @HttpCode(HttpStatus.OK)
   async clearUserCart(@Req() req: AppRequest) {
     await this.cartService.removeByUserId(getUserIdFromRequest(req));
   }
 
   @UseGuards(BasicAuthGuard)
-  @Put('order')
+  @Put('api/order')
   async checkout(@Req() req: AppRequest, @Body() body: CreateOrderDto) {
     let userId = getUserIdFromRequest(req);
 
@@ -107,7 +107,7 @@ export class CartController {
   }
 
   @UseGuards(BasicAuthGuard)
-  @Get('order')
+  @Get('api/order')
   async getOrder(): Promise<Order[]> {
     return await this.orderService.getAll();
   }
