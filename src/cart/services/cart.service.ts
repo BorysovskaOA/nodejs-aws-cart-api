@@ -1,62 +1,126 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { Cart, CartStatuses } from '../models';
+import { DataSource, EntityManager } from 'typeorm';
+import { CartStatuses } from '../models';
+import { CartItem } from '../entities/cart-item.entity';
+import { CartItem as FECardItem } from '../models';
+
+import { Cart } from '../entities/cart.entity';
 import { PutCartPayload } from 'src/order/type';
 
 @Injectable()
 export class CartService {
-  private userCarts: Record<string, Cart> = {};
+  constructor(private readonly dataSource: DataSource) {}
 
-  findByUserId(userId: string): Cart {
-    return this.userCarts[userId];
+  async mapToCartItems(entities: CartItem[]): Promise<FECardItem[]> {
+    if (!entities.length) return [];
+
+    return entities.map((entity) => {
+      return {
+        product: entity.product,
+        count: entity.count,
+      };
+    });
   }
 
-  createByUserId(user_id: string): Cart {
-    const timestamp = Date.now();
+  async findByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Cart | null> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    return await repo.findOne({
+      where: {
+        user: { id: userId },
+        status: CartStatuses.OPEN,
+      },
+      relations: ['items'],
+    });
+  }
 
-    const userCart = {
-      id: randomUUID(),
-      user_id,
-      created_at: timestamp,
-      updated_at: timestamp,
+  async createByUserId(userId: string, manager?: EntityManager): Promise<Cart> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    const userCart = repo.create({
+      user: { id: userId },
       status: CartStatuses.OPEN,
       items: [],
-    };
-
-    this.userCarts[user_id] = userCart;
-
-    return userCart;
+    });
+    return await repo.save(userCart);
   }
 
-  findOrCreateByUserId(userId: string): Cart {
-    const userCart = this.findByUserId(userId);
-
+  async findOrCreateByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Cart> {
+    const userCart = await this.findByUserId(userId, manager);
     if (userCart) {
       return userCart;
     }
-
-    return this.createByUserId(userId);
+    return await this.createByUserId(userId, manager);
   }
 
-  updateByUserId(userId: string, payload: PutCartPayload): Cart {
-    const userCart = this.findOrCreateByUserId(userId);
+  async updateByUserId(userId: string, payload: PutCartPayload): Promise<Cart> {
+    return await this.dataSource.transaction(async (manager) => {
+      let cart = await manager.findOne(Cart, {
+        where: { user: { id: userId }, status: CartStatuses.OPEN },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const index = userCart.items.findIndex(
-      ({ product }) => product.id === payload.product.id,
-    );
+      if (!cart) {
+        const newCart = manager.create(Cart, {
+          user: { id: userId },
+          status: CartStatuses.OPEN,
+          items: [],
+        });
+        cart = await manager.save(Cart, newCart);
+      } else {
+        cart.items = await manager.find(CartItem, {
+          where: { cart_id: cart.id },
+        });
+      }
 
-    if (index === -1) {
-      userCart.items.push(payload);
-    } else if (payload.count === 0) {
-      userCart.items.splice(index, 1);
-    } else {
-      userCart.items[index] = payload;
+      const productId = payload.product.id;
+      const existingItem = cart.items.find(
+        (item) => item.cart_id === cart.id && item.product_id === productId,
+      );
+
+      if (!existingItem) {
+        if (payload.count > 0) {
+          const newItem = manager.create(CartItem, {
+            cart_id: cart.id,
+            product_id: productId,
+            product: payload.product,
+            count: payload.count,
+          });
+          await manager.save(CartItem, newItem);
+        }
+      } else if (payload.count === 0) {
+        await manager.remove(CartItem, existingItem);
+      } else {
+        existingItem.count = payload.count;
+        await manager.save(CartItem, existingItem);
+      }
+
+      const updatedCart = await manager.findOne(Cart, {
+        where: { id: cart.id },
+        relations: ['items'],
+      });
+
+      if (!updatedCart) throw new Error('Failed to load finalized cart status');
+      return updatedCart;
+    });
+  }
+
+  async removeByUserId(userId: string, manager?: EntityManager): Promise<void> {
+    const repo = manager
+      ? manager.getRepository(Cart)
+      : this.dataSource.getRepository(Cart);
+    const cart = await this.findByUserId(userId, manager);
+    if (cart) {
+      cart.status = CartStatuses.ORDERED;
+      await repo.save(cart);
     }
-
-    return userCart;
-  }
-
-  removeByUserId(userId): void {
-    this.userCarts[userId] = null;
   }
 }
